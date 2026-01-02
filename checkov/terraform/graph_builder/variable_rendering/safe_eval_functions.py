@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import os
 import re
 from datetime import datetime, timedelta
 from functools import reduce
@@ -279,7 +280,6 @@ def terraform_try(*args: Any) -> Any:
 SAFE_EVAL_FUNCTIONS: List[str] = []
 SAFE_EVAL_DICT = dict([(k, locals().get(k, None)) for k in SAFE_EVAL_FUNCTIONS])
 
-
 # type conversion functions
 TRY_STR_REPLACEMENT = "__terraform_try__"
 SAFE_EVAL_DICT[TRY_STR_REPLACEMENT] = terraform_try
@@ -379,12 +379,16 @@ def evaluate(input_str: str) -> Any:
 
         # Don't use str.replace to make sure we replace just the first occurrence
         input_str = f"{TRY_STR_REPLACEMENT}{input_str[3:]}"
+    if input_str == "continue":
+        return input_str
     asteval = get_asteval()
+    log_level = os.getenv("LOG_LEVEL")
+    should_log_asteval_errors = log_level == "DEBUG"
     if RANGE_PATTERN.match(input_str):
-        temp_eval = asteval(input_str)
+        temp_eval = asteval(input_str, show_errors=should_log_asteval_errors)
         evaluated = input_str if temp_eval < 0 else temp_eval
     else:
-        evaluated = asteval(input_str)
+        evaluated = asteval(input_str, show_errors=should_log_asteval_errors)
 
     if asteval.error:
         error_messages = [err.get_error() for err in asteval.error]

@@ -16,7 +16,6 @@ from checkov.common.bridgecrew.code_categories import CodeCategoryType
 from checkov.common.bridgecrew.severities import BcSeverities, Severity
 from checkov.common.bridgecrew.check_type import CheckType
 from checkov.common.models.enums import CheckResult, ErrorStatus
-from checkov.common.output.ai import OpenAi
 from checkov.common.typing import _ExitCodeThresholds, _ScaExitCodeThresholds
 from checkov.common.output.record import Record, SCA_PACKAGE_SCAN_CHECK_NAME
 from checkov.common.sast.consts import POLICIES_ERRORS, POLICIES_ERRORS_COUNT, SOURCE_FILES_COUNT, POLICY_COUNT
@@ -288,7 +287,6 @@ class Report:
             baseline: Baseline | None = None,
             use_bc_ids: bool = False,
             summary_position: str = 'top',
-            openai_api_key: str | None = None,
     ) -> str:
         summary = self.get_summary()
         output_data = colored(f"{self.check_type} scan results:\n", "blue")
@@ -327,8 +325,6 @@ class Report:
             if not is_quiet:
                 for record in self.passed_checks:
                     output_data += record.to_string(compact=is_compact, use_bc_ids=use_bc_ids)
-            if self.failed_checks:
-                OpenAi(api_key=openai_api_key).enhance_records(runner_type=self.check_type, records=self.failed_checks)
             for record in self.failed_checks:
                 output_data += record.to_string(compact=is_compact, use_bc_ids=use_bc_ids)
             if not is_quiet:
@@ -443,9 +439,14 @@ class Report:
 
     @staticmethod
     def create_test_suite_properties_block(config: argparse.Namespace) -> Dict[str, Any]:
-        """Creates a dictionary without 'None' values for the JUnit XML properties block"""
+        """Creates a dictionary without 'None' values and sensitive data for the JUnit XML properties block"""
 
-        properties = {k: v for k, v in config.__dict__.items() if v is not None}
+        # List of sensitive properties that should be excluded from outputs
+        sensitive_properties = ['bc_api_key']
+
+        properties = {k: v for k, v in config.__dict__.items()
+                      if v is not None and k not in sensitive_properties}
+
         return properties
 
     def _create_test_case_failure_output(self, record: Record) -> str:
@@ -561,9 +562,7 @@ class Report:
         skip_records = []
         for record in report.failed_checks:
             resource_raw_id = Report.get_plan_resource_raw_id(record.resource)
-            resource_skips = enriched_resources.get(resource_raw_id, {}).get(
-                "skipped_checks", []
-            )
+            resource_skips = enriched_resources.get(resource_raw_id, {}).get("skipped_checks", [])
             for skip in resource_skips:
                 if record.check_id in skip["id"]:
                     # Mark for removal and add it as a skipped record. It is not safe to remove
@@ -575,6 +574,10 @@ class Report:
 
             if record.resource_address and record.resource_address.startswith("module."):
                 module_path = record.resource_address[module_address_len:record.resource_address.index('.', module_address_len + 1)]
+                # For module with for_each or count, the module path will be module.module_name[(.*)]. We can
+                # ignore the index and the for_each value and just use the module name as it's not possible to
+                # skip checks for a specific instance of a module
+                module_path = module_path.split('[')[0]
                 module_enrichments = enriched_resources.get(module_path, {})
                 for module_skip in module_enrichments.get("skipped_checks", []):
                     if record.check_id in module_skip["id"]:
@@ -593,9 +596,17 @@ class Report:
         """
         return the resource raw id without the modules and the indexes
         example: from resource_id='module.module_name.type.name[1]' return 'type.name'
+        example: from resource_id='type.name['some.long.address']' return 'type.name'
+        example: from resource_id='module.module_name['some.long.address']'.type.name return 'type.name'
+        example: from resource_id='module.module_name['some.long.address']'.type.name[1] return 'type.name'
         """
+        if '[' in resource_id:
+            # remove any information inside brackets
+            resource_id = resource_id[:resource_id.index('[')] + resource_id[resource_id.index(']') + 1:]
+        # take last two elements
         resource_raw_id = ".".join(resource_id.split(".")[-2:])
         if '[' in resource_raw_id:
+            # cut string at bracket start
             resource_raw_id = resource_raw_id[:resource_raw_id.index('[')]
         return resource_raw_id
 

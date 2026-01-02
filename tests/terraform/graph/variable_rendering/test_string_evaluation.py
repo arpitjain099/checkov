@@ -51,6 +51,12 @@ class TestTerraformEvaluation(TestCase):
         expected = False
         self.assertEqual(expected, evaluate_terraform(input_str))
 
+    def test_nested_conditional_expression(self):
+        input_str = "{for resource in concat(true ? [{'name'='test'}] : [], false ? [] : [{'name'='test2'}]) : resource.name => resource}"
+        value = evaluate_terraform(input_str)
+        self.assertEqual(value, {'test': {'name': 'test'}, 'test2': {'name': 'test2'}})
+
+
     def test_format(self):
         input_str = '"format("Hello, %s!", "Ander")"'
         expected = 'Hello, Ander!'
@@ -537,11 +543,16 @@ class TestTerraformEvaluation(TestCase):
         result = evaluate_terraform(input_str)
         assert result == expected
 
+    def test_continue_stays_the_same(self):
+        expected = "continue"
+        result = evaluate_terraform("continue")
+        self.assertEqual(expected, result)
+
 
 @pytest.mark.parametrize(
     "origin_str,str_to_replace,new_value,expected",
     [
-        ("${lookup({'a': ${local.protocol1}},\"a\",\"https\")}", '${local.protocol1}', 'local.protocol1', "'local.protocol1'"),
+        ("${lookup({'a': ${local.protocol1}},\"a\",\"https\")}", '${local.protocol1}', 'local.protocol1', '"local.protocol1"'),
         ('${length(keys(var.identity)) > 0 ? [${var.identity}] : []}', '${var.identity}', 'var.identity', 'var.identity'),
     ],
     ids=["escaped", "not escaped"],

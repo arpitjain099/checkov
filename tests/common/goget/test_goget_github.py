@@ -1,5 +1,9 @@
 import unittest
 
+from unittest.mock import patch, Mock, mock_open
+import shutil
+import os
+
 from checkov.common.goget.github.get_git import GitGetter
 
 
@@ -104,6 +108,71 @@ class TestGitGetter(unittest.TestCase):
         self.assertEqual("aa218f56b14c9653891f9e74264a383fa43fefbd", getter.commit_id,
                          "Parsed source commit_id is wrong")
 
+    def test_parse_shortened_commit_id(self):
+        """Test parsing of shortened git commit IDs (5-39 characters)."""
+        url = "https://my-git.com/owner/repository-name?ref=aa218"
+        getter = GitGetter(url)
+        git_url = getter.extract_git_ref(url)
+
+        self.assertEqual(
+            "https://my-git.com/owner/repository-name", git_url, "Parsed source url is wrong for 5-char commit"
+        )
+        self.assertEqual("aa218", getter.commit_id, "Parsed source commit_id is wrong for 5-char commit")
+
+    @patch('checkov.common.goget.github.get_git.Repo')
+    @patch('shutil.copytree')
+    @patch('os.makedirs')
+    def test_do_get_success_with_create_dirs(self, mock_makedirs, mock_copytree, mock_repo):
+        """
+        Test do_get when create_clone_and_result_dirs is True.
+        """
+        # Arrange
+        url = "https://my-git.com/repo"
+        getter = GitGetter(url, create_clone_and_result_dirs=True)
+        getter.temp_dir = "/tmp/test"
+        mock_repo_instance = Mock()
+        mock_repo.clone_from.return_value = mock_repo_instance
+
+        # Act
+        result_dir = getter.do_get()
+
+        # Assert
+        self.assertEqual("/tmp/test/result/", result_dir)
+        mock_repo.clone_from.assert_called_once_with(url, "/tmp/test/clone/", depth=1)
+        mock_copytree.assert_called_once_with("/tmp/test/clone/", "/tmp/test/result/")
+        mock_makedirs.assert_not_called()
+
+    @patch('checkov.common.goget.github.get_git.Repo')
+    @patch('shutil.copytree')
+    @patch('os.makedirs')
+    def test_do_get_success_without_create_dirs(self, mock_makedirs, mock_copytree, mock_repo):
+        """
+        Test do_get when create_clone_and_result_dirs is False.
+        """
+        # Arrange
+        url = "https://my-git.com/repo"
+        getter = GitGetter(url, create_clone_and_result_dirs=False)
+        getter.temp_dir = "/tmp/test"
+        mock_repo_instance = Mock()
+        mock_repo.clone_from.return_value = mock_repo_instance
+
+        # Act
+        result_dir = getter.do_get()
+
+        # Assert
+        self.assertEqual("/tmp/test", result_dir)
+        mock_repo.clone_from.assert_called_once_with(url, "/tmp/test", depth=1)
+        mock_copytree.assert_not_called()
+        mock_makedirs.assert_not_called()
+
+    @patch('checkov.common.goget.github.get_git.git_import_error', ImportError("Mock git import error"))
+    def test_do_get_import_error(self):
+        """Test the case where the git module fails to import."""
+        url = "https://my-git.com/repo"
+        getter = GitGetter(url)
+        with self.assertRaises(ImportError) as context:
+            getter.do_get()
+        self.assertEqual("Unable to load git module (is the git executable available?)", str(context.exception))
 
 if __name__ == '__main__':
     unittest.main()

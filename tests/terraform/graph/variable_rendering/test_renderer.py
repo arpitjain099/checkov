@@ -41,7 +41,7 @@ class TestRenderer(TestCase):
 
         self.compare_vertex_attributes(local_graph, expected_resource, BlockType.RESOURCE, 'aws_s3_bucket.template_bucket')
 
-    def test_render_variable(self):
+    def test_render_variable_second_resource(self):
         resources_dir = os.path.join(TEST_DIRNAME, '../resources/variable_rendering/render_variable')
         graph_manager = TerraformGraphManager('acme', ['acme'])
         local_graph, _ = graph_manager.build_graph_from_source_directory(resources_dir, render_variables=True)
@@ -49,6 +49,18 @@ class TestRenderer(TestCase):
         expected_resource = {'region': "us-west-2", 'bucket': "Storage bucket", "acl": "acl", "force_destroy": True}
 
         self.compare_vertex_attributes(local_graph, expected_resource, BlockType.RESOURCE, 'aws_s3_bucket.storage_bucket')
+
+    def test_render_complex_variable(self):
+        resources_dir = os.path.join(TEST_DIRNAME, '../resources/variable_rendering/complex_var')
+        graph_manager = TerraformGraphManager('acme', ['acme'])
+        local_graph, _ = graph_manager.build_graph_from_source_directory(resources_dir, render_variables=True)
+
+        expected_resource = {'description': 'test', 'name': 'test',
+                             'policy': {'Statement': [{'Action': '*',
+                                                        'Condition': {'MyCond': {'key': ['0.0.0.0', '1.1.1.1']}},
+                                                        'Effect': 'Deny', 'Resource': '*'}], 'Version': '1970-01-01'}}
+
+        self.compare_vertex_attributes(local_graph, expected_resource, BlockType.RESOURCE, 'aws_iam_policy.test')
 
     def test_render_local_from_variable(self):
         resources_dir = os.path.join(TEST_DIRNAME,
@@ -322,6 +334,17 @@ class TestRenderer(TestCase):
             resource_vertex.config["aws_security_group"]["sg"]["egress"][0]["cidr_blocks"][0],
             ["10.0.0.0/16", "0.0.0.0/0"],
         )
+
+        multiple_ingress_vertex = (
+            next(v for v in local_graph.vertices if v.id == 'aws_security_group.multiple_ingress_sg'))
+
+        ingress_field = multiple_ingress_vertex.config["aws_security_group"]["multiple_ingress_sg"]["ingress"]
+        self.assertEqual(len(ingress_field), 3)
+
+        # TODO - make var rendering correctly evaluate inner vars in list
+        self.assertEqual(ingress_field[0],[[]])
+        self.assertEqual(ingress_field[1], {'cidr_blocks': ['${var.cidr_sg}'], 'from_port': 23, 'protocol': 'TCP', 'to_port': 23})
+        self.assertEqual(ingress_field[2],'var.empty_ingress')
 
     @mock.patch.dict(os.environ, {"CHECKOV_RENDER_DYNAMIC_MODULES": "False"})
     def test_dynamic_with_env_var_false(self):

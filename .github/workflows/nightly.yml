@@ -48,7 +48,7 @@ jobs:
           toTag: ${{ steps.prepare_release.outputs.version }}
       - name: Create GitHub Release
         if: steps.build_github_release.outputs.changelog != ''
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844  # v1
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631  # v2.2.2
         id: create_github_release
         with:
           tag_name: ${{ steps.prepare_release.outputs.version }}
@@ -88,7 +88,7 @@ jobs:
     permissions:
       contents: write
     env:
-      PYTHON_VERSION: "3.8"
+      PYTHON_VERSION: "3.9"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v3
         with:
@@ -135,7 +135,7 @@ jobs:
     if: needs.github-release.outputs.upload_url != ''
     runs-on: [self-hosted, public, linux, arm64]
     container:
-      image: arm64v8/python:3.8
+      image: arm64v8/python:3.9
     permissions:
       contents: write
     steps:
