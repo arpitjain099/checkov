@@ -20,6 +20,7 @@ class TestLambdaEnvironmentCredentials(unittest.TestCase):
         passing_resources = {
             "aws_lambda_function.pass",
             "aws_lambda_function.no_env",
+            "aws_lambda_function.pass_nonsecret_long_values",
         }
         failing_resources = {
             "aws_lambda_function.fail",
@@ -28,7 +29,7 @@ class TestLambdaEnvironmentCredentials(unittest.TestCase):
         passed_check_resources = {c.resource for c in report.passed_checks}
         failed_check_resources = {c.resource for c in report.failed_checks}
 
-        self.assertEqual(summary["passed"], 2)
+        self.assertEqual(summary["passed"], 3)
         self.assertEqual(summary["failed"], 1)
         self.assertEqual(summary["skipped"], 0)
         self.assertEqual(summary["parsing_errors"], 0)
